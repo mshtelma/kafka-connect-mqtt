@@ -5,7 +5,7 @@
 
 package com.evokly.kafka.connect.mqtt;
 
-import com.evokly.kafka.connect.mqtt.sample.DumbProcessor;
+import com.evokly.kafka.connect.mqtt.processors.DumbProcessor;
 import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigDef.Importance;

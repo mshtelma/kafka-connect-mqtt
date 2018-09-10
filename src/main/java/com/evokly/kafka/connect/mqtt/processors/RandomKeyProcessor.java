@@ -1,4 +1,4 @@
-package com.evokly.kafka.connect.mqtt.sample;
+package com.evokly.kafka.connect.mqtt.processors;
 
 import com.evokly.kafka.connect.mqtt.MqttMessageProcessor;
 import org.apache.kafka.connect.data.Schema;
@@ -7,16 +7,16 @@ import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Random;
 
-/**
- * Copyright 2016 Evokly S.A.
- *
- * <p>See LICENSE file for License
- **/
-public class DumbProcessor implements MqttMessageProcessor {
-    private static final Logger log = LoggerFactory.getLogger(DumbProcessor.class);
+
+
+public class RandomKeyProcessor implements MqttMessageProcessor {
+    private static final Logger log = LoggerFactory.getLogger(RandomKeyProcessor.class);
     private MqttMessage mMessage;
     private Object mTopic;
+
+    private Random random= new Random();
 
     @Override
     public MqttMessageProcessor process(String topic, MqttMessage message) {
@@ -28,8 +28,10 @@ public class DumbProcessor implements MqttMessageProcessor {
 
     @Override
     public SourceRecord[] getRecords(String kafkaTopic) {
+        String value = new String(mMessage.getPayload());
+        int key = value.hashCode() * random.nextInt();
         return new SourceRecord[]{new SourceRecord(null, null, kafkaTopic, null,
-                Schema.STRING_SCHEMA, mTopic,
-                Schema.BYTES_SCHEMA, mMessage.getPayload())};
+                Schema.INT32_SCHEMA, key,
+                Schema.STRING_SCHEMA, value)};
     }
 }
