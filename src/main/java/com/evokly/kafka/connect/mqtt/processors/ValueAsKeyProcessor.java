@@ -24,9 +24,9 @@ public class ValueAsKeyProcessor implements MqttMessageProcessor {
 
     @Override
     public SourceRecord[] getRecords(String kafkaTopic) {
-        String value = new String(mMessage.getPayload());
+        //String value = new String(mMessage.getPayload());
         return new SourceRecord[]{new SourceRecord(null, null, kafkaTopic, null,
-                Schema.STRING_SCHEMA, value,
-                Schema.STRING_SCHEMA, "")};
+                Schema.BYTES_SCHEMA, mMessage.getPayload(),
+                Schema.BYTES_SCHEMA, null)};
     }
 }
