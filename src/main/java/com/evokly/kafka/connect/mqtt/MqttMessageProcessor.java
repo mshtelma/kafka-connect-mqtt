@@ -12,5 +12,7 @@ public interface MqttMessageProcessor {
 
     MqttMessageProcessor process(String topic, MqttMessage message);
 
+    String getOriginalTopic();
+
     SourceRecord[] getRecords(String kafkaTopic);
 }

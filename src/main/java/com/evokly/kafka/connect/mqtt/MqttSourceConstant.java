@@ -23,4 +23,11 @@ public class MqttSourceConstant {
     public static final String MQTT_PASSWORD = "mqtt.password";
 
     public static final String MESSAGE_PROCESSOR = "message_processor_class";
+
+
+    public static final String MESSAGE_PATTERN = "pattern.";
+    public static final String MESSAGE_PATTENR_NAME = ".name";
+    public static final String USE_ORIGINAL_TOPIC_NAME = "useOriginalTopicName";
+
+
 }

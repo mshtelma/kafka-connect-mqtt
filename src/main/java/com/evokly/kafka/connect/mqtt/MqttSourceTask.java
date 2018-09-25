@@ -22,10 +22,7 @@ import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
@@ -41,6 +38,8 @@ public class MqttSourceTask extends SourceTask implements MqttCallback {
     String mMqttClientId;
     BlockingQueue<MqttMessageProcessor> mQueue = new LinkedBlockingQueue<>();
     MqttSourceConnectorConfig mConfig;
+
+    Map<String, String> mqttTopicToKafkaTopics = new HashMap<>();
 
     /**
      * Get the version of this task. Usually this should be the same as the corresponding
@@ -115,6 +114,7 @@ public class MqttSourceTask extends SourceTask implements MqttCallback {
                     mConfig.getString(MqttSourceConstant.MQTT_PASSWORD).toCharArray());
         }
 
+
         // Connect to Broker
         try {
             // Address of the server to connect to, specified as a URI, is overridden using
@@ -131,17 +131,99 @@ public class MqttSourceTask extends SourceTask implements MqttCallback {
 
         // Setup topic
         try {
-            String topic = mConfig.getString(MqttSourceConstant.MQTT_TOPIC);
+            String mqttTopic = mConfig.getString(MqttSourceConstant.MQTT_TOPIC);
             Integer qos = mConfig.getInt(MqttSourceConstant.MQTT_QUALITY_OF_SERVICE);
 
-            mClient.subscribe(topic, qos);
+            subscribeTopics(mqttTopic, qos);
 
-            log.info("[{}] Subscribe to '{}' with QoS '{}'", mMqttClientId, topic,
-                    qos.toString());
-        } catch (MqttException e) {
+            for (String s : mConfig.originalsStrings().keySet()) {
+                if (s.startsWith(MqttSourceConstant.MESSAGE_PATTERN) && s.endsWith(MqttSourceConstant.MQTT_TOPIC)) {
+                    String topic = mConfig.originalsStrings().get(s).trim();
+                    subscribeTopics(topic, qos);
+                    String useOriginal = s.replace(MqttSourceConstant.MQTT_TOPIC, MqttSourceConstant.USE_ORIGINAL_TOPIC_NAME);
+                    if ("true".equalsIgnoreCase(mConfig.originalsStrings().get(useOriginal))) {
+                        putOriginalTopics(topic);
+                    } else {
+                        String kafkaTopicName = s.replace(MqttSourceConstant.MQTT_TOPIC, MqttSourceConstant.KAFKA_TOPIC);
+                        String kafkaTopic = mConfig.originalsStrings().get(kafkaTopicName);
+                        putTopics(topic, kafkaTopic);
+                    }
+                }
+            }
+
+        } catch (Exception e) {
             log.error("[{}] Subscribe failed! ", mMqttClientId, e);
         }
     }
+
+    private void subscribeTopics(String topic, Integer qos) throws MqttException {
+        if (topic != null && topic.contains(",")) {
+            String[] topics = topic.split(",");
+            for (String s : topics) {
+                if (s != null && !s.trim().equalsIgnoreCase("")) {
+                    String trim = s.trim();
+                    mClient.subscribe(trim, qos);
+                    log.info("[{}] Subscribe to '{}' with QoS '{}'", mMqttClientId, trim,
+                            qos.toString());
+                }
+            }
+        } else if (topic != null && topic.trim().equalsIgnoreCase("")) {
+            String trim = topic.trim();
+            mClient.subscribe(trim, qos);
+            log.info("[{}] Subscribe to '{}' with QoS '{}'", mMqttClientId, trim,
+                    qos.toString());
+        }
+    }
+
+    private void putTopics(String mqttTopics, String kafkaTopic) {
+        if (mqttTopics != null && mqttTopics.contains(",")) {
+            String[] topics = mqttTopics.split(",");
+            for (String s : topics) {
+                if (s != null && !s.trim().equalsIgnoreCase("")) {
+                    String trim = s.trim();
+                    mqttTopicToKafkaTopics.put(trim, kafkaTopic);
+                    log.info("Found new MQTT->Kafka topics '{}' ==> '{}'", trim, kafkaTopic);
+                }
+            }
+        } else if (mqttTopics != null  && mqttTopics.trim().equalsIgnoreCase("")) {
+            mqttTopicToKafkaTopics.put(mqttTopics.trim(), kafkaTopic);
+            log.info("Found new MQTT->Kafka topics '{}' ==> '{}'", mqttTopics, kafkaTopic);
+        }
+    }
+
+    private void putOriginalTopics(String mqttTopics) {
+        if (mqttTopics != null && mqttTopics.contains(",")) {
+            String[] topics = mqttTopics.split(",");
+            for (String topic : topics) {
+                String trim = topic.trim();
+                String kafkaTopic = transformName(trim);
+                mqttTopicToKafkaTopics.put(trim, kafkaTopic);
+                log.info("Found new MQTT->Kafka topics '{}' ==> '{}'", trim, kafkaTopic);
+            }
+        } else if (mqttTopics != null) {
+            String trim = mqttTopics.trim();
+            String kafkaTopic = transformName(trim);
+            mqttTopicToKafkaTopics.put(trim, kafkaTopic);
+            log.info("Found new MQTT->Kafka topics '{}' ==> '{}'", mqttTopics, kafkaTopic);
+        }
+    }
+
+    private String transformName(String name) {
+        if (name != null) {
+            return name.replace("/", "_").replace("\\", "_").trim();
+        } else
+            return null;
+    }
+
+    private String determineKafkaTopic(String mqttTopic) {
+        String kafkaTopic = mqttTopicToKafkaTopics.get(mqttTopic);
+        if (kafkaTopic != null)
+            return kafkaTopic;
+        else
+            return mKafkaTopic;
+    }
+
+
 
     /**
      * Stop this task.
@@ -164,7 +246,6 @@ public class MqttSourceTask extends SourceTask implements MqttCallback {
      * available.
      *
      * @return a list of source records
-     *
      * @throws InterruptedException thread is waiting, sleeping, or otherwise occupied,
      *                              and the thread is interrupted, either before or during the
      *                              activity
@@ -176,7 +257,13 @@ public class MqttSourceTask extends SourceTask implements MqttCallback {
         log.debug("[{}] Polling new data from queue for '{}' topic.",
                 mMqttClientId, mKafkaTopic);
 
-        Collections.addAll(records, message.getRecords(mKafkaTopic));
+        String kafkaTopic = determineKafkaTopic(message.getOriginalTopic());
+        if (kafkaTopic == null) {
+            log.info("[{}] No Kafka topic for MQTT topic '{}'", mMqttClientId, message.getOriginalTopic());
+            return records;
+        }
+
+        Collections.addAll(records, message.getRecords(kafkaTopic));
 
         return records;
     }
@@ -207,7 +294,6 @@ public class MqttSourceTask extends SourceTask implements MqttCallback {
      *
      * @param topic   name of the topic on the message was published to
      * @param message the actual message.
-     *
      * @throws Exception if a terminal error has occurred, and the client should be
      *                   shut down.
      */
@@ -215,10 +301,10 @@ public class MqttSourceTask extends SourceTask implements MqttCallback {
     public void messageArrived(String topic, MqttMessage message) throws Exception {
         log.debug("[{}] New message on '{}' arrived.", mMqttClientId, topic);
 
-        this.mQueue.add(
-                mConfig.getConfiguredInstance(MqttSourceConstant.MESSAGE_PROCESSOR,
-                        MqttMessageProcessor.class)
-                    .process(topic, message)
+
+        this.mQueue.add(mConfig.getConfiguredInstance(MqttSourceConstant.MESSAGE_PROCESSOR,
+                MqttMessageProcessor.class)
+                .process(topic, message)
         );
     }
 }
