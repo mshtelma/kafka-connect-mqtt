@@ -167,7 +167,7 @@ public class MqttSourceTask extends SourceTask implements MqttCallback {
                             qos.toString());
                 }
             }
-        } else if (topic != null && topic.trim().equalsIgnoreCase("")) {
+        } else if (topic != null && !topic.trim().equalsIgnoreCase("")) {
             String trim = topic.trim();
             mClient.subscribe(trim, qos);
             log.info("[{}] Subscribe to '{}' with QoS '{}'", mMqttClientId, trim,
@@ -185,7 +185,7 @@ public class MqttSourceTask extends SourceTask implements MqttCallback {
                     log.info("Found new MQTT->Kafka topics '{}' ==> '{}'", trim, kafkaTopic);
                 }
             }
-        } else if (mqttTopics != null  && mqttTopics.trim().equalsIgnoreCase("")) {
+        } else if (mqttTopics != null  && !mqttTopics.trim().equalsIgnoreCase("")) {
             mqttTopicToKafkaTopics.put(mqttTopics.trim(), kafkaTopic);
             log.info("Found new MQTT->Kafka topics '{}' ==> '{}'", mqttTopics, kafkaTopic);
         }
